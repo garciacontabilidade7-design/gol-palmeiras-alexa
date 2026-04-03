@@ -63,14 +63,19 @@ def trigger():
         print("VOICE_TOKEN não configurado")
         return
 
-    requests.get(
-        "https://api.voicemonkey.io/trigger",
-        params={
-            "access_token": VOICE_TOKEN,
-            "monkey": "gol_palmeiras"
-        }
-    )
-    print("Disparou Alexa!")
+    try:
+        requests.get(
+            "https://api-v2.voicemonkey.io/trigger",
+            params={
+                "token": VOICE_TOKEN,
+                "device": "golpalmeiras"
+            },
+            timeout=10
+        )
+        print("Disparou Alexa!")
+
+    except Exception as e:
+        print("Erro ao disparar Alexa:", e)
 
 
 def monitor():

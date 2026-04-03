@@ -1,7 +1,7 @@
 import requests
 import time
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
@@ -9,7 +9,9 @@ VOICE_TOKEN = os.getenv("VOICE_TOKEN")
 TEAM_ID = 121  # Palmeiras
 
 def get_today_matches():
-    today = datetime.utcnow().strftime('%Y-%m-%d')
+    # Usa horário do Brasil (UTC-3)
+    now = datetime.now(UTC) - timedelta(hours=3)
+    today = now.strftime('%Y-%m-%d')
 
     url = f"https://v3.football.api-sports.io/fixtures?date={today}"
     headers = {"x-apisports-key": API_KEY}
@@ -49,6 +51,10 @@ def get_live_match():
 
 
 def trigger():
+    if not VOICE_TOKEN:
+        print("VOICE_TOKEN não configurado")
+        return
+
     requests.get(
         "https://api.voicemonkey.io/trigger",
         params={
@@ -67,13 +73,12 @@ while True:
     matches = get_today_matches()
 
     if not matches:
-        print("Hoje não tem jogo do Palmeiras. Dormindo 6h...")
+        print("Hoje NÃO tem jogo do Palmeiras. Dormindo 6h...")
         time.sleep(21600)  # 6 horas
         continue
 
     print("Tem jogo hoje! Monitorando...")
 
-    # Monitora enquanto houver jogo ao vivo
     while True:
         match = get_live_match()
 

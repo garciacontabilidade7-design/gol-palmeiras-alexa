@@ -125,9 +125,22 @@ def monitor():
                 time.sleep(300)
 
 
-# roda o monitor em paralelo
-Thread(target=monitor).start()
+# 🔥 NOVO: keep alive
+def keep_alive():
+    while True:
+        try:
+            requests.get("http://127.0.0.1:8080")
+            print("Ping interno enviado")
+        except Exception as e:
+            print("Erro no ping:", e)
 
-# inicia servidor web (mantém Railway ativo)
+        time.sleep(300)  # 5 minutos
+
+
+# 🚀 Threads rodando juntas
+Thread(target=monitor).start()
+Thread(target=keep_alive).start()
+
+# Servidor Flask (necessário pro Railway)
 port = int(os.environ.get("PORT", 8080))
 app.run(host="0.0.0.0", port=port)

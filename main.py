@@ -1,13 +1,33 @@
 import requests
 import time
 import os
+from datetime import datetime, timedelta
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
 
 TEAM_ID = 121  # Palmeiras
 
-last_goals = -1
+def get_today_matches():
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+
+    url = f"https://v3.football.api-sports.io/fixtures?date={today}"
+    headers = {"x-apisports-key": API_KEY}
+
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        data = res.json()
+
+        matches = []
+        for m in data.get("response", []):
+            if TEAM_ID in [m["teams"]["home"]["id"], m["teams"]["away"]["id"]]:
+                matches.append(m)
+
+        return matches
+
+    except Exception as e:
+        print("Erro ao buscar jogos:", e)
+        return []
 
 
 def get_live_match():
@@ -15,72 +35,72 @@ def get_live_match():
     headers = {"x-apisports-key": API_KEY}
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        data = response.json()
+        res = requests.get(url, headers=headers, timeout=10)
+        data = res.json()
 
-        for match in data.get("response", []):
-            home_id = match["teams"]["home"]["id"]
-            away_id = match["teams"]["away"]["id"]
-
-            if TEAM_ID in [home_id, away_id]:
-                return match
+        for m in data.get("response", []):
+            if TEAM_ID in [m["teams"]["home"]["id"], m["teams"]["away"]["id"]]:
+                return m
 
     except Exception as e:
-        print("Erro API:", e)
+        print("Erro live:", e)
 
     return None
 
 
-def trigger_alexa():
-    try:
-        url = "https://api.voicemonkey.io/trigger"
-        params = {
+def trigger():
+    requests.get(
+        "https://api.voicemonkey.io/trigger",
+        params={
             "access_token": VOICE_TOKEN,
             "monkey": "gol_palmeiras"
         }
-
-        requests.get(url, params=params, timeout=5)
-        print("Disparou Alexa!")
-
-    except Exception as e:
-        print("Erro ao disparar:", e)
+    )
+    print("Disparou Alexa!")
 
 
-print("Monitorando jogo do Palmeiras...")
+print("Sistema inteligente iniciado...")
+
+last_goals = -1
 
 while True:
-    match = get_live_match()
+    matches = get_today_matches()
 
-    if match:
-        home_id = match["teams"]["home"]["id"]
-        away_id = match["teams"]["away"]["id"]
+    if not matches:
+        print("Hoje não tem jogo do Palmeiras. Dormindo 6h...")
+        time.sleep(21600)  # 6 horas
+        continue
 
-        home_goals = match["goals"]["home"]
-        away_goals = match["goals"]["away"]
+    print("Tem jogo hoje! Monitorando...")
 
-        total_goals = home_goals + away_goals
+    # Monitora enquanto houver jogo ao vivo
+    while True:
+        match = get_live_match()
 
-        if last_goals == -1:
-            last_goals = total_goals
+        if match:
+            home_id = match["teams"]["home"]["id"]
+            away_id = match["teams"]["away"]["id"]
 
-        # Detecta novo gol
-        if total_goals > last_goals:
+            gh = match["goals"]["home"]
+            ga = match["goals"]["away"]
 
-            # Verifica se foi gol do Palmeiras
-            if (home_id == TEAM_ID and home_goals > away_goals) or \
-               (away_id == TEAM_ID and away_goals > home_goals):
+            total = gh + ga
 
-                print("GOOOOOOL DO PALMEIRAS!")
-                trigger_alexa()
+            if last_goals == -1:
+                last_goals = total
 
-            else:
-                print("Gol, mas não foi do Palmeiras")
+            if total > last_goals:
+                if (home_id == TEAM_ID and gh > ga) or \
+                   (away_id == TEAM_ID and ga > gh):
 
-            last_goals = total_goals
+                    print("GOOOOL DO PALMEIRAS!")
+                    trigger()
 
-        print(f"Placar: {home_goals} x {away_goals}")
+                last_goals = total
 
-    else:
-        print("Nenhum jogo ao vivo do Palmeiras")
+            print(f"Placar: {gh} x {ga}")
+            time.sleep(20)
 
-    time.sleep(15)
+        else:
+            print("Jogo ainda não começou ou terminou.")
+            time.sleep(300)

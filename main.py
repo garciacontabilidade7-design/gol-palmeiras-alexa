@@ -125,8 +125,10 @@ def monitor():
                 time.sleep(300)
 
 
-# 🔥 NOVO: keep alive
+# 🔥 KEEP ALIVE CORRIGIDO
 def keep_alive():
+    time.sleep(60)  # espera o servidor subir
+
     while True:
         try:
             requests.get("http://127.0.0.1:8080")
@@ -134,13 +136,16 @@ def keep_alive():
         except Exception as e:
             print("Erro no ping:", e)
 
-        time.sleep(300)  # 5 minutos
+        time.sleep(300)
 
 
-# 🚀 Threads rodando juntas
+# 🚀 INICIA TUDO NA ORDEM CORRETA
 Thread(target=monitor).start()
-Thread(target=keep_alive).start()
 
-# Servidor Flask (necessário pro Railway)
 port = int(os.environ.get("PORT", 8080))
-app.run(host="0.0.0.0", port=port)
+
+# sobe servidor em thread
+Thread(target=lambda: app.run(host="0.0.0.0", port=port)).start()
+
+# depois mantém vivo
+Thread(target=keep_alive).start()

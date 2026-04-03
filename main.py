@@ -2,14 +2,22 @@ import requests
 import time
 import os
 from datetime import datetime, timedelta, UTC
+from threading import Thread
+from flask import Flask
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
 
 TEAM_ID = 121  # Palmeiras
 
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Servidor ativo 🚀"
+
+
 def get_today_matches():
-    # Usa horário do Brasil (UTC-3)
     now = datetime.now(UTC) - timedelta(hours=3)
     today = now.strftime('%Y-%m-%d')
 
@@ -65,47 +73,56 @@ def trigger():
     print("Disparou Alexa!")
 
 
-print("Sistema inteligente iniciado...")
+def monitor():
+    print("Sistema inteligente iniciado...")
 
-last_goals = -1
-
-while True:
-    matches = get_today_matches()
-
-    if not matches:
-        print("Hoje NÃO tem jogo do Palmeiras. Dormindo 6h...")
-        time.sleep(21600)  # 6 horas
-        continue
-
-    print("Tem jogo hoje! Monitorando...")
+    last_goals = -1
 
     while True:
-        match = get_live_match()
+        matches = get_today_matches()
 
-        if match:
-            home_id = match["teams"]["home"]["id"]
-            away_id = match["teams"]["away"]["id"]
+        if not matches:
+            print("Hoje NÃO tem jogo do Palmeiras. Dormindo 6h...")
+            time.sleep(21600)
+            continue
 
-            gh = match["goals"]["home"]
-            ga = match["goals"]["away"]
+        print("Tem jogo hoje! Monitorando...")
 
-            total = gh + ga
+        while True:
+            match = get_live_match()
 
-            if last_goals == -1:
-                last_goals = total
+            if match:
+                home_id = match["teams"]["home"]["id"]
+                away_id = match["teams"]["away"]["id"]
 
-            if total > last_goals:
-                if (home_id == TEAM_ID and gh > ga) or \
-                   (away_id == TEAM_ID and ga > gh):
+                gh = match["goals"]["home"]
+                ga = match["goals"]["away"]
 
-                    print("GOOOOL DO PALMEIRAS!")
-                    trigger()
+                total = gh + ga
 
-                last_goals = total
+                if last_goals == -1:
+                    last_goals = total
 
-            print(f"Placar: {gh} x {ga}")
-            time.sleep(20)
+                if total > last_goals:
+                    if (home_id == TEAM_ID and gh > ga) or \
+                       (away_id == TEAM_ID and ga > gh):
 
-        else:
-            print("Jogo ainda não começou ou terminou.")
-            time.sleep(300)
+                        print("GOOOOL DO PALMEIRAS!")
+                        trigger()
+
+                    last_goals = total
+
+                print(f"Placar: {gh} x {ga}")
+                time.sleep(20)
+
+            else:
+                print("Jogo ainda não começou ou terminou.")
+                time.sleep(300)
+
+
+# roda o monitor em paralelo
+Thread(target=monitor).start()
+
+# inicia servidor web (mantém Railway ativo)
+port = int(os.environ.get("PORT", 8080))
+app.run(host="0.0.0.0", port=port)

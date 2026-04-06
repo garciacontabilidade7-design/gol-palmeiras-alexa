@@ -16,34 +16,7 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔍 Pega o próximo jogo (sem depender de data)
-def get_next_match():
-    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&next=1"
-    headers = {"x-apisports-key": API_KEY}
-
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        data = res.json()
-
-        if data.get("response"):
-            match = data["response"][0]
-
-            status = match["fixture"]["status"]["short"]
-            print(f"Status do jogo: {status}")
-
-            # NS = não começou
-            # 1H, 2H = ao vivo
-            if status in ["NS", "1H", "2H"]:
-                print("Jogo válido encontrado!")
-                return match
-
-    except Exception as e:
-        print("Erro ao buscar jogo:", e)
-
-    return None
-
-
-# 🔴 Verifica jogo ao vivo
+# 🔴 Busca jogo AO VIVO (mais confiável)
 def get_live_match():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -52,8 +25,14 @@ def get_live_match():
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
 
+        print("Consultando jogos ao vivo...")
+
         for m in data.get("response", []):
-            if TEAM_ID in [m["teams"]["home"]["id"], m["teams"]["away"]["id"]]:
+            home = m["teams"]["home"]["id"]
+            away = m["teams"]["away"]["id"]
+
+            if TEAM_ID in [home, away]:
+                print("⚽ Palmeiras está jogando AO VIVO!")
                 return m
 
     except Exception as e:
@@ -83,42 +62,28 @@ def monitor():
     print("Sistema inteligente iniciado...")
 
     last_goals = -1
-    jogo_detectado = False
 
     while True:
 
-        # 🧊 ECONOMIA: consulta poucas vezes até achar jogo
-        if not jogo_detectado:
-            print("Verificando próximo jogo...")
+        # 🧊 ECONOMIA: espera até ter jogo AO VIVO
+        print("Verificando se Palmeiras está jogando...")
 
-            match = get_next_match()
-
-            if match:
-                print("Tem jogo! Aguardando iniciar...")
-                jogo_detectado = True
-            else:
-                print("Nada encontrado. Tentando novamente em 12h...")
-                time.sleep(43200)
-                continue
-
-        # ⏳ Espera começar
         live = get_live_match()
 
         if not live:
-            print("Jogo ainda não começou...")
-            time.sleep(300)  # 5 min
+            print("Sem jogo ao vivo. Próxima tentativa em 30 minutos...")
+            time.sleep(1800)  # 30 min
             continue
 
-        print("⚽ JOGO AO VIVO! Monitorando...")
+        print("🔥 JOGO AO VIVO DETECTADO!")
 
-        # ⚡ Durante o jogo
+        # ⚡ MONITOR DURANTE O JOGO
         while True:
             live = get_live_match()
 
             if not live:
-                print("Jogo terminou.")
+                print("🏁 Jogo terminou.")
                 last_goals = -1
-                jogo_detectado = False
                 break
 
             home_id = live["teams"]["home"]["id"]
@@ -134,21 +99,25 @@ def monitor():
 
             # ⚽ Detecta gol
             if total > last_goals:
+
                 if (home_id == TEAM_ID and gh > ga) or \
                    (away_id == TEAM_ID and ga > gh):
 
                     print("GOOOOL DO PALMEIRAS!")
                     trigger()
 
+                else:
+                    print("Gol, mas não foi do Palmeiras.")
+
                 last_goals = total
 
-            print(f"Placar: {gh} x {ga}")
+            print(f"Placar atual: {gh} x {ga}")
 
-            # ⏱️ consulta a cada 30 segundos (baixo consumo)
+            # ⏱️ consulta a cada 30s (seguro pro limite)
             time.sleep(30)
 
 
-# 🚀 inicia monitor
+# 🚀 inicia monitor em paralelo
 Thread(target=monitor).start()
 
 

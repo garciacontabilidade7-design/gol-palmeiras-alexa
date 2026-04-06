@@ -1,39 +1,33 @@
-from flask import Flask, jsonify
+import os
 import requests
-from datetime import datetime
-import pytz
-
-app = Flask(__name__)
+import time
+from datetime import datetime, timedelta
 
 # ---------------- CONFIGURAÇÃO ----------------
-API_KEY = "8b785b51ef784e1bf47ebb1ac9796119"  # chave da API-Football
-API_HOST = "v3.football.api-sports.io"
-LA_LIGA_ID = 140  # ID da La Liga na API-Football
-HORARIO_JOGO = 16  # horário de Brasília que você quer monitorar (16h)
-TIMEZONE = "America/Sao_Paulo"
-TEMPORADA = 2026  # temporada atual da API
+API_KEY = "8b785b51ef784e1bf47ebb1ac9796119"
+TEMPORADA = 2026
+CHECK_INTERVAL = 30  # segundos entre verificações
 
-# ----------------- FUNÇÃO DE DADOS GOOGLE -----------------
-def pegar_dados_google():
-    # Aqui você pode implementar scraping do Google
-    # Por enquanto vamos simular tentativa que falha
-    return None
+# Times do jogo específico
+TIME_HOME = "Girona"
+TIME_AWAY = "Villarreal"
 
-# ----------------- FUNÇÃO DE DADOS API-Football (fallback) -----------------
-def pegar_dados_api_football():
+# Voice Monkey
+VOICE_TOKEN = os.environ.get("VOICE_TOKEN")
+VOICE_MONKEY_URL = f"https://api.voicemonkey.io/trigger?token={VOICE_TOKEN}&monkey=gol"
+
+# ---------------- FUNÇÃO PARA PEGAR JOGO ----------------
+def pegar_jogo():
     url = "https://v3.football.api-sports.io/fixtures"
     headers = {
         "X-RapidAPI-Key": API_KEY,
-        "X-RapidAPI-Host": API_HOST
+        "X-RapidAPI-Host": "v3.football.api-sports.io"
     }
-    # Filtrando apenas jogos da La Liga hoje
-    brasilia = pytz.timezone(TIMEZONE)
-    hoje = datetime.now(brasilia).strftime("%Y-%m-%d")
-    params = {
-        "league": LA_LIGA_ID,
-        "season": TEMPORADA,
-        "date": hoje
-    }
+
+    hoje = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%d")  # horário de Brasília
+    LA_LIGA_ID = 140
+
+    params = {"league": LA_LIGA_ID, "season": TEMPORADA, "date": hoje}
 
     try:
         response = requests.get(url, headers=headers, params=params)
@@ -41,44 +35,50 @@ def pegar_dados_api_football():
         data = response.json()
         fixtures = data.get("response", [])
 
-        if not fixtures:
-            return "Não há jogos da La Liga hoje."
-
-        resultados = []
+        # Procurar o jogo específico
         for jogo in fixtures:
-            fixture = jogo["fixture"]
-            teams = jogo["teams"]
-            score = jogo["score"]["fulltime"]
-
-            home = teams["home"]["name"]
-            away = teams["away"]["name"]
-            status = fixture["status"]["short"]
-            score_str = f"{score['home']} x {score['away']}" if score["home"] is not None else "Ainda não começou"
-
-            resultados.append(f"{home} x {away} - Status: {status}, Placar: {score_str}")
-
-        return "\n".join(resultados)
+            home = jogo["teams"]["home"]["name"]
+            away = jogo["teams"]["away"]["name"]
+            if home == TIME_HOME and away == TIME_AWAY:
+                return jogo
+        return None
 
     except Exception as e:
-        return f"Erro ao buscar dados da API-Football: {e}"
+        print("Erro ao buscar jogo:", e)
+        return None
 
-# ----------------- ROTA FLASK -----------------
-@app.route("/monitorar")
-def monitorar_jogo():
-    brasilia = pytz.timezone(TIMEZONE)
-    agora = datetime.now(brasilia)
+# ---------------- FUNÇÃO PARA ALERTA VOICE MONKEY ----------------
+def enviar_alerta_gol():
+    try:
+        requests.get(VOICE_MONKEY_URL)
+        print("Gol detectado! Alerta enviado.")
+    except Exception as e:
+        print("Erro ao enviar alerta:", e)
 
-    if agora.hour < HORARIO_JOGO:
-        return jsonify({"mensagem": "Os jogos da La Liga ainda não começaram. Volte às 16h."})
+# ---------------- LOOP PRINCIPAL ----------------
+def monitorar_gols():
+    ultimo_placar = None
+    while True:
+        jogo = pegar_jogo()
+        if jogo:
+            score = jogo["score"]["fulltime"]
+            gols_home = score["home"] if score["home"] is not None else 0
+            gols_away = score["away"] if score["away"] is not None else 0
 
-    # Tenta pegar do Google
-    dados = pegar_dados_google()
-    if not dados:
-        # Se falhar, pega da API-Football
-        dados = pegar_dados_api_football()
+            placar_atual = {"home": gols_home, "away": gols_away}
 
-    return jsonify({"mensagem": dados})
+            if ultimo_placar:
+                # detecta qualquer gol
+                if placar_atual["home"] > ultimo_placar["home"] or placar_atual["away"] > ultimo_placar["away"]:
+                    enviar_alerta_gol()
 
-# ----------------- INICIALIZAÇÃO -----------------
+            ultimo_placar = placar_atual
+        else:
+            print("Jogo não encontrado ainda ou erro na API.")
+
+        time.sleep(CHECK_INTERVAL)
+
+# ---------------- EXECUÇÃO ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    print("Monitoramento do jogo Girona x Villarreal iniciado...")
+    monitorar_gols()

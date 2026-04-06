@@ -3,46 +3,19 @@ import time
 import os
 from threading import Thread
 from flask import Flask
+from bs4 import BeautifulSoup
 
-API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Servidor ativo 🚀"
-
-
-# 🔴 Busca TODOS jogos ao vivo
-def get_live_match():
-    url = "https://v3.football.api-sports.io/fixtures?live=all"
-    headers = {"x-apisports-key": API_KEY}
-
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        data = res.json()
-
-        jogos = data.get("response", [])
-
-        if jogos:
-            print(f"{len(jogos)} jogos ao vivo encontrados:")
-
-            for j in jogos:
-                home = j["teams"]["home"]["name"]
-                away = j["teams"]["away"]["name"]
-                print(f"➡️ {home} x {away}")
-
-            return jogos[0]  # usa o primeiro jogo
-
-    except Exception as e:
-        print("Erro ao buscar jogos:", e)
-
-    return None
+    return "OK"
 
 
 # 🔊 Disparo Alexa
-def trigger():
+def trigger(jogo):
     try:
         requests.get(
             "https://api-v2.voicemonkey.io/trigger",
@@ -52,65 +25,93 @@ def trigger():
             },
             timeout=5
         )
-        print("🔊 GOL DETECTADO! Alexa acionada!")
+        print(f"🔊 GOL DETECTADO EM: {jogo}")
     except Exception as e:
         print("Erro Alexa:", e)
 
 
-# 🧠 Monitor principal
-def monitor():
-    print("Modo TESTE iniciado...")
+# 🔎 Fonte 1 — Google
+def get_google_score():
+    try:
+        url = "https://www.google.com/search?q=girona+vs+villarreal"
+        headers = {"User-Agent": "Mozilla/5.0"}
 
-    last_goals = -1
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        scores = soup.find_all("div", class_="BNeawe deIvCb AP7Wnd")
+
+        if len(scores) >= 2:
+            return int(scores[0].text), int(scores[1].text)
+    except:
+        pass
+
+    return None, None
+
+
+# 🔎 Fonte 2 — fallback
+def get_alt_score():
+    try:
+        url = "https://www.google.com/search?q=girona+villarreal+placar+ao+vivo"
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        spans = soup.find_all("span")
+        nums = [s.text for s in spans if s.text.isdigit()]
+
+        if len(nums) >= 2:
+            return int(nums[0]), int(nums[1])
+    except:
+        pass
+
+    return None, None
+
+
+# 🔁 Sistema inteligente
+def get_score():
+    gh, ga = get_google_score()
+
+    if gh is not None:
+        return gh, ga
+
+    print("⚠️ Google falhou, usando fallback...")
+    return get_alt_score()
+
+
+def monitor():
+    print("🚀 MONITORAMENTO INICIADO (ULTRA RÁPIDO)")
+
+    last_total = -1
 
     while True:
 
-        print("Buscando jogos ao vivo...")
+        gh, ga = get_score()
 
-        live = get_live_match()
-
-        if not live:
-            print("Nenhum jogo ao vivo. Tentando em 5 minutos...")
-            time.sleep(300)
+        if gh is None:
+            print("Sem dados do jogo ainda...")
+            time.sleep(10)
             continue
 
-        print("🔥 JOGO AO VIVO DETECTADO!")
+        total = gh + ga
 
-        while True:
-            live = get_live_match()
+        if last_total == -1:
+            last_total = total
 
-            if not live:
-                print("🏁 Jogo terminou.")
-                last_goals = -1
-                break
+        if total > last_total:
+            print(f"⚽ GOL! {gh} x {ga}")
+            trigger("Girona x Villarreal")
+            last_total = total
 
-            home = live["teams"]["home"]["name"]
-            away = live["teams"]["away"]["name"]
+        print(f"📊 Placar atual: {gh} x {ga}")
 
-            gh = live["goals"]["home"]
-            ga = live["goals"]["away"]
-
-            total = gh + ga
-
-            if last_goals == -1:
-                last_goals = total
-
-            # ⚽ Detecta qualquer gol
-            if total > last_goals:
-                print(f"⚽ GOL! {home} {gh} x {ga} {away}")
-                trigger()
-                last_goals = total
-
-            print(f"Placar: {home} {gh} x {ga} {away}")
-
-            # ⏱️ consulta rápida pra teste
-            time.sleep(15)
+        time.sleep(5)  # ⚡ velocidade máxima
 
 
-# 🚀 inicia monitor em paralelo
+# 🔥 Thread
 Thread(target=monitor).start()
 
-
-# 🌐 servidor (Railway)
+# 🌐 Servidor Railway
 port = int(os.environ.get("PORT", 8080))
 app.run(host="0.0.0.0", port=port)

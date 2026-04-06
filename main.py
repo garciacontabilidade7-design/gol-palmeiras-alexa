@@ -3,7 +3,7 @@ import time
 import os
 from threading import Thread
 from flask import Flask
-from datetime import datetime
+from datetime import datetime, timedelta
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
@@ -17,16 +17,21 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔍 Busca jogo do dia
+# 🔍 Busca jogos (ONTEM + HOJE + AMANHÃ)
 def get_today_match():
-    today = datetime.utcnow().strftime('%Y-%m-%d')
+    today = datetime.utcnow()
 
-    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&date={today}"
+    date_from = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+    date_to = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&from={date_from}&to={date_to}"
     headers = {"x-apisports-key": API_KEY}
 
     try:
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
+
+        print(f"Buscando jogos de {date_from} até {date_to}")
 
         if data.get("response"):
             return data["response"][0]
@@ -80,31 +85,31 @@ def monitor():
     jogo_detectado = False
 
     while True:
-        # 🧊 Verifica só 2x por dia
+        # 🧊 ECONOMIA (2x por dia)
         if not jogo_detectado:
-            print("Verificando se tem jogo hoje...")
+            print("Verificando se tem jogo...")
 
             match = get_today_match()
 
             if match:
-                print("Tem jogo hoje! Aguardando início...")
+                print("Tem jogo! Aguardando começar...")
                 jogo_detectado = True
             else:
-                print("Sem jogo hoje. Próxima checagem em 12h...")
+                print("Sem jogo. Próxima checagem em 12h...")
                 time.sleep(43200)
                 continue
 
-        # ⏳ Espera começar
+        # ⏳ Espera jogo iniciar
         live = get_live_match()
 
         if not live:
             print("Jogo ainda não começou...")
-            time.sleep(300)  # 5 min
+            time.sleep(300)  # 5 minutos
             continue
 
         print("⚽ JOGO AO VIVO! Monitorando...")
 
-        # ⚡ Durante o jogo
+        # ⚡ DURANTE JOGO
         while True:
             live = get_live_match()
 
@@ -136,11 +141,14 @@ def monitor():
 
             print(f"Placar: {gh} x {ga}")
 
-            # ⏱️ 30 segundos (SEU PEDIDO)
+            # ⏱️ 30 segundos
             time.sleep(30)
 
 
+# 🚀 inicia thread
 Thread(target=monitor).start()
 
+
+# 🌐 servidor (Railway)
 port = int(os.environ.get("PORT", 8080))
 app.run(host="0.0.0.0", port=port)

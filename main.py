@@ -1,9 +1,9 @@
 import requests
 import time
 import os
-from datetime import datetime, timedelta, UTC
 from threading import Thread
 from flask import Flask
+from datetime import datetime
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
@@ -17,34 +17,27 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔥 BUSCA JOGOS (ONTEM + HOJE + AMANHÃ → resolve fuso 100%)
-def get_matches():
-    now = datetime.now(UTC) - timedelta(hours=3)
+# 🔍 Busca jogo do dia
+def get_today_match():
+    today = datetime.utcnow().strftime('%Y-%m-%d')
 
-    date_from = (now - timedelta(days=1)).strftime('%Y-%m-%d')
-    date_to = (now + timedelta(days=1)).strftime('%Y-%m-%d')
-
-    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&from={date_from}&to={date_to}"
+    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&date={today}"
     headers = {"x-apisports-key": API_KEY}
 
     try:
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
 
-        print(f"Buscando jogos de {date_from} até {date_to}")
-
         if data.get("response"):
-            return data["response"]
-
-        print("Nenhum jogo encontrado nesse período.")
+            return data["response"][0]
 
     except Exception as e:
-        print("Erro ao buscar jogos:", e)
+        print("Erro ao buscar jogo:", e)
 
-    return []
+    return None
 
 
-# 🔥 BUSCA JOGO AO VIVO
+# 🔴 Jogo ao vivo
 def get_live_match():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -63,12 +56,8 @@ def get_live_match():
     return None
 
 
-# 🔊 DISPARA ALEXA
+# 🔊 Dispara Alexa
 def trigger():
-    if not VOICE_TOKEN:
-        print("VOICE_TOKEN não configurado")
-        return
-
     try:
         requests.get(
             "https://api-v2.voicemonkey.io/trigger",
@@ -79,64 +68,79 @@ def trigger():
             timeout=5
         )
         print("Disparou Alexa!")
-
     except Exception as e:
-        print("Erro ao disparar Alexa:", e)
+        print("Erro Alexa:", e)
 
 
-# 🧠 MONITOR PRINCIPAL
+# 🧠 Monitor principal
 def monitor():
     print("Sistema inteligente iniciado...")
 
     last_goals = -1
+    jogo_detectado = False
 
     while True:
-        matches = get_matches()
+        # 🧊 Verifica só 2x por dia
+        if not jogo_detectado:
+            print("Verificando se tem jogo hoje...")
 
-        if not matches:
-            print("Sem jogo nesse período. Dormindo 30min...")
-            time.sleep(1800)
+            match = get_today_match()
+
+            if match:
+                print("Tem jogo hoje! Aguardando início...")
+                jogo_detectado = True
+            else:
+                print("Sem jogo hoje. Próxima checagem em 12h...")
+                time.sleep(43200)
+                continue
+
+        # ⏳ Espera começar
+        live = get_live_match()
+
+        if not live:
+            print("Jogo ainda não começou...")
+            time.sleep(300)  # 5 min
             continue
 
-        print("Tem jogo próximo! Monitorando...")
+        print("⚽ JOGO AO VIVO! Monitorando...")
 
+        # ⚡ Durante o jogo
         while True:
             live = get_live_match()
 
-            if live:
-                home_id = live["teams"]["home"]["id"]
-                away_id = live["teams"]["away"]["id"]
+            if not live:
+                print("Jogo terminou.")
+                last_goals = -1
+                jogo_detectado = False
+                break
 
-                gh = live["goals"]["home"]
-                ga = live["goals"]["away"]
+            home_id = live["teams"]["home"]["id"]
+            away_id = live["teams"]["away"]["id"]
 
-                total = gh + ga
+            gh = live["goals"]["home"]
+            ga = live["goals"]["away"]
 
-                if last_goals == -1:
-                    last_goals = total
+            total = gh + ga
 
-                if total > last_goals:
-                    # ⚽ verifica se foi gol do Palmeiras
-                    if (home_id == TEAM_ID and gh > ga) or \
-                       (away_id == TEAM_ID and ga > gh):
+            if last_goals == -1:
+                last_goals = total
 
-                        print("GOOOOL DO PALMEIRAS!")
-                        trigger()
+            if total > last_goals:
+                if (home_id == TEAM_ID and gh > ga) or \
+                   (away_id == TEAM_ID and ga > gh):
 
-                    last_goals = total
+                    print("GOOOOL DO PALMEIRAS!")
+                    trigger()
 
-                print(f"Placar: {gh} x {ga}")
-                time.sleep(20)
+                last_goals = total
 
-            else:
-                print("Aguardando jogo ao vivo...")
-                time.sleep(60)
+            print(f"Placar: {gh} x {ga}")
+
+            # ⏱️ 30 segundos (SEU PEDIDO)
+            time.sleep(30)
 
 
-# 🚀 THREAD
 Thread(target=monitor).start()
 
-
-# 🌐 SERVIDOR (Railway)
 port = int(os.environ.get("PORT", 8080))
 app.run(host="0.0.0.0", port=port)

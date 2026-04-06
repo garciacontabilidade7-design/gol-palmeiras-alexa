@@ -17,29 +17,25 @@ def home():
     return "Servidor ativo 🚀"
 
 
-def get_today_matches():
-    now = datetime.now(UTC) - timedelta(hours=3)
-    today = now.strftime('%Y-%m-%d')
-
-    url = f"https://v3.football.api-sports.io/fixtures?date={today}"
+# 🔥 PEGA PRÓXIMO JOGO (SEM USAR DATA)
+def get_next_match():
+    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&next=1"
     headers = {"x-apisports-key": API_KEY}
 
     try:
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
 
-        matches = []
-        for m in data.get("response", []):
-            if TEAM_ID in [m["teams"]["home"]["id"], m["teams"]["away"]["id"]]:
-                matches.append(m)
-
-        return matches
+        if data["response"]:
+            return data["response"][0]
 
     except Exception as e:
-        print("Erro ao buscar jogos:", e)
-        return []
+        print("Erro ao buscar próximo jogo:", e)
+
+    return None
 
 
+# 🔥 PEGA JOGO AO VIVO
 def get_live_match():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -58,6 +54,7 @@ def get_live_match():
     return None
 
 
+# 🔊 DISPARA ALEXA
 def trigger():
     if not VOICE_TOKEN:
         print("VOICE_TOKEN não configurado")
@@ -70,7 +67,7 @@ def trigger():
                 "token": VOICE_TOKEN,
                 "device": "golpalmeiras"
             },
-            timeout=10
+            timeout=5
         )
         print("Disparou Alexa!")
 
@@ -78,30 +75,48 @@ def trigger():
         print("Erro ao disparar Alexa:", e)
 
 
+# 🧠 MONITOR INTELIGENTE
 def monitor():
     print("Sistema inteligente iniciado...")
 
     last_goals = -1
 
     while True:
-        matches = get_today_matches()
+        match = get_next_match()
 
-        if not matches:
-            print("Hoje NÃO tem jogo do Palmeiras. Dormindo 6h...")
-            time.sleep(21600)
+        if not match:
+            print("Erro ao buscar próximo jogo. Tentando em 10min...")
+            time.sleep(600)
             continue
 
-        print("Tem jogo hoje! Monitorando...")
+        # ⏰ horário do jogo (UTC → Brasil)
+        match_time_utc = datetime.fromisoformat(match["fixture"]["date"].replace("Z", "+00:00"))
+        match_time_br = match_time_utc - timedelta(hours=3)
 
+        now = datetime.now(UTC) - timedelta(hours=3)
+
+        diff = (match_time_br - now).total_seconds()
+
+        print(f"Próximo jogo às {match_time_br.strftime('%d/%m %H:%M')}")
+
+        # 🔥 Se faltar mais de 2h → dorme
+        if diff > 7200:
+            print("Jogo ainda longe. Dormindo 30min...")
+            time.sleep(1800)
+            continue
+
+        print("Jogo próximo! Monitorando ao vivo...")
+
+        # 🔥 MONITORAR AO VIVO
         while True:
-            match = get_live_match()
+            live = get_live_match()
 
-            if match:
-                home_id = match["teams"]["home"]["id"]
-                away_id = match["teams"]["away"]["id"]
+            if live:
+                home_id = live["teams"]["home"]["id"]
+                away_id = live["teams"]["away"]["id"]
 
-                gh = match["goals"]["home"]
-                ga = match["goals"]["away"]
+                gh = live["goals"]["home"]
+                ga = live["goals"]["away"]
 
                 total = gh + ga
 
@@ -109,6 +124,7 @@ def monitor():
                     last_goals = total
 
                 if total > last_goals:
+                    # ⚽ verifica se foi gol do Palmeiras
                     if (home_id == TEAM_ID and gh > ga) or \
                        (away_id == TEAM_ID and ga > gh):
 
@@ -121,31 +137,14 @@ def monitor():
                 time.sleep(20)
 
             else:
-                print("Jogo ainda não começou ou terminou.")
-                time.sleep(300)
+                print("Aguardando jogo começar...")
+                time.sleep(60)
 
 
-# 🔥 KEEP ALIVE CORRIGIDO
-def keep_alive():
-    time.sleep(60)  # espera o servidor subir
-
-    while True:
-        try:
-            requests.get("http://127.0.0.1:8080")
-            print("Ping interno enviado")
-        except Exception as e:
-            print("Erro no ping:", e)
-
-        time.sleep(300)
-
-
-# 🚀 INICIA TUDO NA ORDEM CORRETA
+# 🚀 THREAD DO MONITOR
 Thread(target=monitor).start()
 
+
+# 🌐 SERVIDOR WEB (Railway)
 port = int(os.environ.get("PORT", 8080))
-
-# sobe servidor em thread
-Thread(target=lambda: app.run(host="0.0.0.0", port=port)).start()
-
-# depois mantém vivo
-Thread(target=keep_alive).start()
+app.run(host="0.0.0.0", port=port)

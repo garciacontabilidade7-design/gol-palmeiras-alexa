@@ -3,7 +3,6 @@ import time
 import os
 from threading import Thread
 from flask import Flask
-from datetime import datetime, timedelta, timezone
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
@@ -17,31 +16,25 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔍 Busca jogo do dia (horário Brasil)
-def get_today_match():
-    now_br = datetime.now(timezone.utc) - timedelta(hours=3)
-    today_br = now_br.date()
-
-    date_from = (today_br - timedelta(days=1)).strftime('%Y-%m-%d')
-    date_to = (today_br + timedelta(days=1)).strftime('%Y-%m-%d')
-
-    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&from={date_from}&to={date_to}"
+# 🔍 Pega o próximo jogo (sem depender de data)
+def get_next_match():
+    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&next=1"
     headers = {"x-apisports-key": API_KEY}
 
     try:
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
 
-        print(f"Buscando jogos de {date_from} até {date_to}")
+        if data.get("response"):
+            match = data["response"][0]
 
-        for match in data.get("response", []):
-            data_jogo = match["fixture"]["date"]
+            status = match["fixture"]["status"]["short"]
+            print(f"Status do jogo: {status}")
 
-            dt = datetime.fromisoformat(data_jogo.replace("Z", "+00:00"))
-            dt_br = dt - timedelta(hours=3)
-
-            if dt_br.date() == today_br:
-                print("Jogo encontrado hoje!")
+            # NS = não começou
+            # 1H, 2H = ao vivo
+            if status in ["NS", "1H", "2H"]:
+                print("Jogo válido encontrado!")
                 return match
 
     except Exception as e:
@@ -50,7 +43,7 @@ def get_today_match():
     return None
 
 
-# 🔴 Jogo ao vivo
+# 🔴 Verifica jogo ao vivo
 def get_live_match():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -93,21 +86,22 @@ def monitor():
     jogo_detectado = False
 
     while True:
-        # 🧊 ECONOMIA (2x por dia)
-        if not jogo_detectado:
-            print("Verificando se tem jogo...")
 
-            match = get_today_match()
+        # 🧊 ECONOMIA: consulta poucas vezes até achar jogo
+        if not jogo_detectado:
+            print("Verificando próximo jogo...")
+
+            match = get_next_match()
 
             if match:
-                print("Tem jogo hoje! Aguardando iniciar...")
+                print("Tem jogo! Aguardando iniciar...")
                 jogo_detectado = True
             else:
-                print("Sem jogo. Próxima checagem em 12h...")
+                print("Nada encontrado. Tentando novamente em 12h...")
                 time.sleep(43200)
                 continue
 
-        # ⏳ Espera jogo começar
+        # ⏳ Espera começar
         live = get_live_match()
 
         if not live:
@@ -138,6 +132,7 @@ def monitor():
             if last_goals == -1:
                 last_goals = total
 
+            # ⚽ Detecta gol
             if total > last_goals:
                 if (home_id == TEAM_ID and gh > ga) or \
                    (away_id == TEAM_ID and ga > gh):
@@ -149,11 +144,11 @@ def monitor():
 
             print(f"Placar: {gh} x {ga}")
 
-            # ⏱️ consulta a cada 30 segundos
+            # ⏱️ consulta a cada 30 segundos (baixo consumo)
             time.sleep(30)
 
 
-# 🚀 inicia monitor em paralelo
+# 🚀 inicia monitor
 Thread(target=monitor).start()
 
 

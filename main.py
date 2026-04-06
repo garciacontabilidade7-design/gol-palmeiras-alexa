@@ -1,117 +1,84 @@
+from flask import Flask, jsonify
 import requests
-import time
-import os
-from threading import Thread
-from flask import Flask
-from bs4 import BeautifulSoup
-
-VOICE_TOKEN = os.getenv("VOICE_TOKEN")
+from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "OK"
+# ---------------- CONFIGURAÇÃO ----------------
+API_KEY = "8b785b51ef784e1bf47ebb1ac9796119"  # chave da API-Football
+API_HOST = "v3.football.api-sports.io"
+LA_LIGA_ID = 140  # ID da La Liga na API-Football
+HORARIO_JOGO = 16  # horário de Brasília que você quer monitorar (16h)
+TIMEZONE = "America/Sao_Paulo"
+TEMPORADA = 2026  # temporada atual da API
 
+# ----------------- FUNÇÃO DE DADOS GOOGLE -----------------
+def pegar_dados_google():
+    # Aqui você pode implementar scraping do Google
+    # Por enquanto vamos simular tentativa que falha
+    return None
 
-# 🔊 Disparo Alexa
-def trigger(jogo):
+# ----------------- FUNÇÃO DE DADOS API-Football (fallback) -----------------
+def pegar_dados_api_football():
+    url = "https://v3.football.api-sports.io/fixtures"
+    headers = {
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": API_HOST
+    }
+    # Filtrando apenas jogos da La Liga hoje
+    brasilia = pytz.timezone(TIMEZONE)
+    hoje = datetime.now(brasilia).strftime("%Y-%m-%d")
+    params = {
+        "league": LA_LIGA_ID,
+        "season": TEMPORADA,
+        "date": hoje
+    }
+
     try:
-        requests.get(
-            "https://api-v2.voicemonkey.io/trigger",
-            params={
-                "token": VOICE_TOKEN,
-                "device": "golpalmeiras"
-            },
-            timeout=5
-        )
-        print(f"🔊 GOL DETECTADO EM: {jogo}")
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        fixtures = data.get("response", [])
+
+        if not fixtures:
+            return "Não há jogos da La Liga hoje."
+
+        resultados = []
+        for jogo in fixtures:
+            fixture = jogo["fixture"]
+            teams = jogo["teams"]
+            score = jogo["score"]["fulltime"]
+
+            home = teams["home"]["name"]
+            away = teams["away"]["name"]
+            status = fixture["status"]["short"]
+            score_str = f"{score['home']} x {score['away']}" if score["home"] is not None else "Ainda não começou"
+
+            resultados.append(f"{home} x {away} - Status: {status}, Placar: {score_str}")
+
+        return "\n".join(resultados)
+
     except Exception as e:
-        print("Erro Alexa:", e)
+        return f"Erro ao buscar dados da API-Football: {e}"
 
+# ----------------- ROTA FLASK -----------------
+@app.route("/monitorar")
+def monitorar_jogo():
+    brasilia = pytz.timezone(TIMEZONE)
+    agora = datetime.now(brasilia)
 
-# 🔎 Fonte 1 — Google
-def get_google_score():
-    try:
-        url = "https://www.google.com/search?q=girona+vs+villarreal"
-        headers = {"User-Agent": "Mozilla/5.0"}
+    if agora.hour < HORARIO_JOGO:
+        return jsonify({"mensagem": "Os jogos da La Liga ainda não começaram. Volte às 16h."})
 
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, "html.parser")
+    # Tenta pegar do Google
+    dados = pegar_dados_google()
+    if not dados:
+        # Se falhar, pega da API-Football
+        dados = pegar_dados_api_football()
 
-        scores = soup.find_all("div", class_="BNeawe deIvCb AP7Wnd")
+    return jsonify({"mensagem": dados})
 
-        if len(scores) >= 2:
-            return int(scores[0].text), int(scores[1].text)
-    except:
-        pass
-
-    return None, None
-
-
-# 🔎 Fonte 2 — fallback
-def get_alt_score():
-    try:
-        url = "https://www.google.com/search?q=girona+villarreal+placar+ao+vivo"
-        headers = {"User-Agent": "Mozilla/5.0"}
-
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, "html.parser")
-
-        spans = soup.find_all("span")
-        nums = [s.text for s in spans if s.text.isdigit()]
-
-        if len(nums) >= 2:
-            return int(nums[0]), int(nums[1])
-    except:
-        pass
-
-    return None, None
-
-
-# 🔁 Sistema inteligente
-def get_score():
-    gh, ga = get_google_score()
-
-    if gh is not None:
-        return gh, ga
-
-    print("⚠️ Google falhou, usando fallback...")
-    return get_alt_score()
-
-
-def monitor():
-    print("🚀 MONITORAMENTO INICIADO (ULTRA RÁPIDO)")
-
-    last_total = -1
-
-    while True:
-
-        gh, ga = get_score()
-
-        if gh is None:
-            print("Sem dados do jogo ainda...")
-            time.sleep(10)
-            continue
-
-        total = gh + ga
-
-        if last_total == -1:
-            last_total = total
-
-        if total > last_total:
-            print(f"⚽ GOL! {gh} x {ga}")
-            trigger("Girona x Villarreal")
-            last_total = total
-
-        print(f"📊 Placar atual: {gh} x {ga}")
-
-        time.sleep(5)  # ⚡ velocidade máxima
-
-
-# 🔥 Thread
-Thread(target=monitor).start()
-
-# 🌐 Servidor Railway
-port = int(os.environ.get("PORT", 8080))
-app.run(host="0.0.0.0", port=port)
+# ----------------- INICIALIZAÇÃO -----------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)

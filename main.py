@@ -17,13 +17,12 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔥 BUSCA JOGOS (HOJE + AMANHÃ → resolve problema de fuso)
+# 🔥 BUSCA JOGOS (ONTEM + HOJE + AMANHÃ → resolve fuso 100%)
 def get_matches():
-    today = datetime.now(UTC) - timedelta(hours=3)
-    tomorrow = today + timedelta(days=1)
+    now = datetime.now(UTC) - timedelta(hours=3)
 
-    date_from = today.strftime('%Y-%m-%d')
-    date_to = tomorrow.strftime('%Y-%m-%d')
+    date_from = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+    date_to = (now + timedelta(days=1)).strftime('%Y-%m-%d')
 
     url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&from={date_from}&to={date_to}"
     headers = {"x-apisports-key": API_KEY}
@@ -31,6 +30,8 @@ def get_matches():
     try:
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
+
+        print(f"Buscando jogos de {date_from} até {date_to}")
 
         if data.get("response"):
             return data["response"]
@@ -93,7 +94,7 @@ def monitor():
         matches = get_matches()
 
         if not matches:
-            print("Sem jogo hoje/amanhã. Dormindo 30min...")
+            print("Sem jogo nesse período. Dormindo 30min...")
             time.sleep(1800)
             continue
 

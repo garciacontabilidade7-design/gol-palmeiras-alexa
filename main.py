@@ -17,25 +17,33 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔥 PEGA PRÓXIMO JOGO (SEM USAR DATA)
-def get_next_match():
-    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&next=1"
+# 🔥 BUSCA JOGOS (HOJE + AMANHÃ → resolve problema de fuso)
+def get_matches():
+    today = datetime.now(UTC) - timedelta(hours=3)
+    tomorrow = today + timedelta(days=1)
+
+    date_from = today.strftime('%Y-%m-%d')
+    date_to = tomorrow.strftime('%Y-%m-%d')
+
+    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&from={date_from}&to={date_to}"
     headers = {"x-apisports-key": API_KEY}
 
     try:
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
 
-        if data["response"]:
-            return data["response"][0]
+        if data.get("response"):
+            return data["response"]
+
+        print("Nenhum jogo encontrado nesse período.")
 
     except Exception as e:
-        print("Erro ao buscar próximo jogo:", e)
+        print("Erro ao buscar jogos:", e)
 
-    return None
+    return []
 
 
-# 🔥 PEGA JOGO AO VIVO
+# 🔥 BUSCA JOGO AO VIVO
 def get_live_match():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -75,39 +83,22 @@ def trigger():
         print("Erro ao disparar Alexa:", e)
 
 
-# 🧠 MONITOR INTELIGENTE
+# 🧠 MONITOR PRINCIPAL
 def monitor():
     print("Sistema inteligente iniciado...")
 
     last_goals = -1
 
     while True:
-        match = get_next_match()
+        matches = get_matches()
 
-        if not match:
-            print("Erro ao buscar próximo jogo. Tentando em 10min...")
-            time.sleep(600)
-            continue
-
-        # ⏰ horário do jogo (UTC → Brasil)
-        match_time_utc = datetime.fromisoformat(match["fixture"]["date"].replace("Z", "+00:00"))
-        match_time_br = match_time_utc - timedelta(hours=3)
-
-        now = datetime.now(UTC) - timedelta(hours=3)
-
-        diff = (match_time_br - now).total_seconds()
-
-        print(f"Próximo jogo às {match_time_br.strftime('%d/%m %H:%M')}")
-
-        # 🔥 Se faltar mais de 2h → dorme
-        if diff > 7200:
-            print("Jogo ainda longe. Dormindo 30min...")
+        if not matches:
+            print("Sem jogo hoje/amanhã. Dormindo 30min...")
             time.sleep(1800)
             continue
 
-        print("Jogo próximo! Monitorando ao vivo...")
+        print("Tem jogo próximo! Monitorando...")
 
-        # 🔥 MONITORAR AO VIVO
         while True:
             live = get_live_match()
 
@@ -137,14 +128,14 @@ def monitor():
                 time.sleep(20)
 
             else:
-                print("Aguardando jogo começar...")
+                print("Aguardando jogo ao vivo...")
                 time.sleep(60)
 
 
-# 🚀 THREAD DO MONITOR
+# 🚀 THREAD
 Thread(target=monitor).start()
 
 
-# 🌐 SERVIDOR WEB (Railway)
+# 🌐 SERVIDOR (Railway)
 port = int(os.environ.get("PORT", 8080))
 app.run(host="0.0.0.0", port=port)

@@ -9,8 +9,8 @@ TEMPORADA = 2026
 CHECK_INTERVAL = 30  # segundos entre verificações
 
 # Times do jogo específico
-TIME_HOME = "Girona"
-TIME_AWAY = "Villarreal"
+TIME_HOME = "US Lecce"
+TIME_AWAY = "Atalanta"
 
 # Voice Monkey
 VOICE_TOKEN = os.environ.get("VOICE_TOKEN")
@@ -25,9 +25,9 @@ def pegar_jogo():
     }
 
     hoje = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%d")  # horário de Brasília
-    LA_LIGA_ID = 140
+    SERIE_A_ID = 135  # ID da Serie A (Itália)
 
-    params = {"league": LA_LIGA_ID, "season": TEMPORADA, "date": hoje}
+    params = {"league": SERIE_A_ID, "season": TEMPORADA, "date": hoje}
 
     try:
         response = requests.get(url, headers=headers, params=params)
@@ -40,7 +40,8 @@ def pegar_jogo():
         for jogo in fixtures:
             home = jogo["teams"]["home"]["name"]
             away = jogo["teams"]["away"]["name"]
-            print(f"{home} x {away} - Status: {jogo['fixture']['status']['short']}")
+            status = jogo["fixture"]["status"]["short"]
+            print(f"{home} x {away} - Status: {status}")
 
         # Procurar o jogo específico
         for jogo in fixtures:
@@ -87,5 +88,5 @@ def monitorar_gols():
 
 # ---------------- EXECUÇÃO ----------------
 if __name__ == "__main__":
-    print("Monitoramento do jogo Girona x Villarreal iniciado...")
+    print("Monitoramento do jogo US Lecce x Atalanta iniciado...")
     monitorar_gols()

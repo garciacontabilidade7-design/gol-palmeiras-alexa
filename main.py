@@ -3,24 +3,26 @@ from bs4 import BeautifulSoup
 import time
 import os
 
-# --- CONFIGURAÇÕES ---
-VOICE_TOKEN = os.environ.get("VOICE_TOKEN")  # token do Railway
-VOICE_DEVICE = os.environ.get("VOICE_DEVICE")  # device ID do Voice Monkey
+# Configurações Voice Monkey
+VOICE_TOKEN = os.environ.get("VOICE_TOKEN")
+VOICE_DEVICE = os.environ.get("VOICE_DEVICE")
 
-# URL do jogo específico (ajuste conforme o site que quiser)
-# Exemplo: Globoesporte -> Lecce x Atalanta
-JOGO_URL = "https://globoesporte.globo.com/futebol/italia/serie-a/jogo/2026-04-06/lecce-atalanta/"
+# Pesquisa Google para o jogo Lecce x Atalanta
+GOOGLE_SEARCH = "US Lecce vs Atalanta placar ao vivo"
 
-# --- FUNÇÕES ---
-def pegar_placar():
-    """Faz scraping do placar do site e retorna (gols_home, gols_away)"""
+def pegar_placar_google():
+    """Faz scraping do Google para pegar o placar"""
     try:
-        res = requests.get(JOGO_URL, timeout=10)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        url = f"https://www.google.com/search?q={GOOGLE_SEARCH.replace(' ', '+')}"
+        res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Globoesporte: busca elementos de gols
-        home_score_elem = soup.find("span", {"class": "placar__time__gols-home"})
-        away_score_elem = soup.find("span", {"class": "placar__time__gols-away"})
+        # Google costuma colocar o placar em spans com id "vs_c"
+        home_score_elem = soup.find("div", class_="imso_mh__l-tm-sc")
+        away_score_elem = soup.find("div", class_="imso_mh__r-tm-sc")
         
         if home_score_elem and away_score_elem:
             gols_home = int(home_score_elem.text.strip())
@@ -29,11 +31,10 @@ def pegar_placar():
         else:
             return None
     except Exception as e:
-        print("Erro ao pegar placar:", e)
+        print("Erro ao pegar placar do Google:", e)
         return None
 
 def enviar_alerta_gol():
-    """Dispara alerta no Voice Monkey"""
     url = f"https://api.voicemonkey.io/trigger?AccessToken={VOICE_TOKEN}&Device={VOICE_DEVICE}&MonkeyType=smart&CustomMessage=Gol!"
     try:
         requests.get(url)
@@ -41,11 +42,10 @@ def enviar_alerta_gol():
     except:
         print("Erro ao enviar alerta Voice Monkey")
 
-# --- LOOP PRINCIPAL ---
 ultimo_placar = None
-print("Monitoramento do jogo Lecce x Atalanta iniciado...")
+print("Monitoramento do jogo Lecce x Atalanta iniciado (Google)...")
 while True:
-    placar = pegar_placar()
+    placar = pegar_placar_google()
     if placar:
         if ultimo_placar is None:
             ultimo_placar = placar
@@ -54,6 +54,5 @@ while True:
             ultimo_placar = placar
         print(f"Placar atual: {placar[0]} x {placar[1]}")
     else:
-        print("Placar não disponível ainda.")
-    
-    time.sleep(30)  # verifica a cada 30 segundos
+        print("Placar ainda não disponível.")
+    time.sleep(30)

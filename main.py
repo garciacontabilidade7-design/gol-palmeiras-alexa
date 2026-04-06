@@ -35,6 +35,13 @@ def pegar_jogo():
         data = response.json()
         fixtures = data.get("response", [])
 
+        # DEBUG: mostrar todos os jogos retornados
+        print("DEBUG - jogos retornados pela API:")
+        for jogo in fixtures:
+            home = jogo["teams"]["home"]["name"]
+            away = jogo["teams"]["away"]["name"]
+            print(f"{home} x {away} - Status: {jogo['fixture']['status']['short']}")
+
         # Procurar o jogo específico
         for jogo in fixtures:
             home = jogo["teams"]["home"]["name"]

@@ -3,7 +3,7 @@ import time
 import os
 from threading import Thread
 from flask import Flask
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
@@ -17,12 +17,13 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔍 Busca jogos (ONTEM + HOJE + AMANHÃ)
+# 🔍 Busca jogo do dia (horário Brasil)
 def get_today_match():
-    today = datetime.utcnow()
+    now_br = datetime.now(timezone.utc) - timedelta(hours=3)
+    today_br = now_br.date()
 
-    date_from = (today - timedelta(days=1)).strftime('%Y-%m-%d')
-    date_to = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+    date_from = (today_br - timedelta(days=1)).strftime('%Y-%m-%d')
+    date_to = (today_br + timedelta(days=1)).strftime('%Y-%m-%d')
 
     url = f"https://v3.football.api-sports.io/fixtures?team={TEAM_ID}&from={date_from}&to={date_to}"
     headers = {"x-apisports-key": API_KEY}
@@ -33,8 +34,15 @@ def get_today_match():
 
         print(f"Buscando jogos de {date_from} até {date_to}")
 
-        if data.get("response"):
-            return data["response"][0]
+        for match in data.get("response", []):
+            data_jogo = match["fixture"]["date"]
+
+            dt = datetime.fromisoformat(data_jogo.replace("Z", "+00:00"))
+            dt_br = dt - timedelta(hours=3)
+
+            if dt_br.date() == today_br:
+                print("Jogo encontrado hoje!")
+                return match
 
     except Exception as e:
         print("Erro ao buscar jogo:", e)
@@ -61,7 +69,7 @@ def get_live_match():
     return None
 
 
-# 🔊 Dispara Alexa
+# 🔊 Disparo Alexa
 def trigger():
     try:
         requests.get(
@@ -72,7 +80,7 @@ def trigger():
             },
             timeout=5
         )
-        print("Disparou Alexa!")
+        print("🔊 Gol enviado para Alexa!")
     except Exception as e:
         print("Erro Alexa:", e)
 
@@ -92,24 +100,24 @@ def monitor():
             match = get_today_match()
 
             if match:
-                print("Tem jogo! Aguardando começar...")
+                print("Tem jogo hoje! Aguardando iniciar...")
                 jogo_detectado = True
             else:
                 print("Sem jogo. Próxima checagem em 12h...")
                 time.sleep(43200)
                 continue
 
-        # ⏳ Espera jogo iniciar
+        # ⏳ Espera jogo começar
         live = get_live_match()
 
         if not live:
             print("Jogo ainda não começou...")
-            time.sleep(300)  # 5 minutos
+            time.sleep(300)  # 5 min
             continue
 
         print("⚽ JOGO AO VIVO! Monitorando...")
 
-        # ⚡ DURANTE JOGO
+        # ⚡ Durante o jogo
         while True:
             live = get_live_match()
 
@@ -141,11 +149,11 @@ def monitor():
 
             print(f"Placar: {gh} x {ga}")
 
-            # ⏱️ 30 segundos
+            # ⏱️ consulta a cada 30 segundos
             time.sleep(30)
 
 
-# 🚀 inicia thread
+# 🚀 inicia monitor em paralelo
 Thread(target=monitor).start()
 
 

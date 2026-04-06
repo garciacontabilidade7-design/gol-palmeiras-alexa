@@ -1,42 +1,35 @@
 import requests
+from bs4 import BeautifulSoup
 import time
-from datetime import datetime
 import os
 
 # --- CONFIGURAÇÕES ---
-API_FOOTBALL_KEY = "8b785b51ef784e1bf47ebb1ac9796119"
 VOICE_TOKEN = os.environ.get("VOICE_TOKEN")  # token do Railway
 VOICE_DEVICE = os.environ.get("VOICE_DEVICE")  # device ID do Voice Monkey
 
-# IDs dos times
-TEAM1_ID = 867  # Lecce
-TEAM2_ID = 499  # Atalanta
-
-# Liga e temporada (opcional, para filtrar se quiser)
-LEAGUE_ID = 195  # Exemplo: Serie A 2025/26
-SEASON = 2025
+# URL do jogo específico (ajuste conforme o site que quiser)
+# Exemplo: Globoesporte -> Lecce x Atalanta
+JOGO_URL = "https://globoesporte.globo.com/futebol/italia/serie-a/jogo/2026-04-06/lecce-atalanta/"
 
 # --- FUNÇÕES ---
-def get_fixture():
-    """Busca o jogo de hoje entre os dois times."""
-    hoje = datetime.utcnow().strftime("%Y-%m-%d")
-    url = f"https://v3.football.api-sports.io/fixtures?team={TEAM1_ID}&date={hoje}"
-    headers = {
-        "X-RapidAPI-Key": API_FOOTBALL_KEY,
-        "X-RapidAPI-Host": "v3.football.api-sports.io"
-    }
+def pegar_placar():
+    """Faz scraping do placar do site e retorna (gols_home, gols_away)"""
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        data = res.json()
-        fixtures = data.get("response", [])
-        for f in fixtures:
-            teams = f["teams"]
-            if teams["home"]["id"] == TEAM1_ID and teams["away"]["id"] == TEAM2_ID or \
-               teams["home"]["id"] == TEAM2_ID and teams["away"]["id"] == TEAM1_ID:
-                return f  # retorna o fixture do jogo
-        return None
+        res = requests.get(JOGO_URL, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        
+        # Globoesporte: busca elementos de gols
+        home_score_elem = soup.find("span", {"class": "placar__time__gols-home"})
+        away_score_elem = soup.find("span", {"class": "placar__time__gols-away"})
+        
+        if home_score_elem and away_score_elem:
+            gols_home = int(home_score_elem.text.strip())
+            gols_away = int(away_score_elem.text.strip())
+            return (gols_home, gols_away)
+        else:
+            return None
     except Exception as e:
-        print("Erro na API:", e)
+        print("Erro ao pegar placar:", e)
         return None
 
 def enviar_alerta_gol():
@@ -48,22 +41,19 @@ def enviar_alerta_gol():
     except:
         print("Erro ao enviar alerta Voice Monkey")
 
-# --- MAIN LOOP ---
+# --- LOOP PRINCIPAL ---
 ultimo_placar = None
 print("Monitoramento do jogo Lecce x Atalanta iniciado...")
 while True:
-    fixture = get_fixture()
-    if fixture:
-        goals_home = fixture["goals"]["home"]
-        goals_away = fixture["goals"]["away"]
-        placar_atual = (goals_home, goals_away)
+    placar = pegar_placar()
+    if placar:
         if ultimo_placar is None:
-            ultimo_placar = placar_atual
-        # Se houve gol desde a última verificação
-        if placar_atual != ultimo_placar:
+            ultimo_placar = placar
+        if placar != ultimo_placar:
             enviar_alerta_gol()
-            ultimo_placar = placar_atual
-        print(f"Placar: {goals_home} x {goals_away}")
+            ultimo_placar = placar
+        print(f"Placar atual: {placar[0]} x {placar[1]}")
     else:
-        print("Jogo não encontrado ainda ou erro na API.")
+        print("Placar não disponível ainda.")
+    
     time.sleep(30)  # verifica a cada 30 segundos

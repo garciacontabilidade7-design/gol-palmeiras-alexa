@@ -7,8 +7,6 @@ from flask import Flask
 API_KEY = os.getenv("API_KEY")
 VOICE_TOKEN = os.getenv("VOICE_TOKEN")
 
-TEAM_ID = 121  # Palmeiras
-
 app = Flask(__name__)
 
 @app.route("/")
@@ -16,7 +14,7 @@ def home():
     return "Servidor ativo 🚀"
 
 
-# 🔴 Busca jogo AO VIVO (mais confiável)
+# 🔴 Busca TODOS jogos ao vivo
 def get_live_match():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -25,18 +23,20 @@ def get_live_match():
         res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
 
-        print("Consultando jogos ao vivo...")
+        jogos = data.get("response", [])
 
-        for m in data.get("response", []):
-            home = m["teams"]["home"]["id"]
-            away = m["teams"]["away"]["id"]
+        if jogos:
+            print(f"{len(jogos)} jogos ao vivo encontrados:")
 
-            if TEAM_ID in [home, away]:
-                print("⚽ Palmeiras está jogando AO VIVO!")
-                return m
+            for j in jogos:
+                home = j["teams"]["home"]["name"]
+                away = j["teams"]["away"]["name"]
+                print(f"➡️ {home} x {away}")
+
+            return jogos[0]  # usa o primeiro jogo
 
     except Exception as e:
-        print("Erro live:", e)
+        print("Erro ao buscar jogos:", e)
 
     return None
 
@@ -52,32 +52,30 @@ def trigger():
             },
             timeout=5
         )
-        print("🔊 Gol enviado para Alexa!")
+        print("🔊 GOL DETECTADO! Alexa acionada!")
     except Exception as e:
         print("Erro Alexa:", e)
 
 
 # 🧠 Monitor principal
 def monitor():
-    print("Sistema inteligente iniciado...")
+    print("Modo TESTE iniciado...")
 
     last_goals = -1
 
     while True:
 
-        # 🧊 ECONOMIA: espera até ter jogo AO VIVO
-        print("Verificando se Palmeiras está jogando...")
+        print("Buscando jogos ao vivo...")
 
         live = get_live_match()
 
         if not live:
-            print("Sem jogo ao vivo. Próxima tentativa em 30 minutos...")
-            time.sleep(1800)  # 30 min
+            print("Nenhum jogo ao vivo. Tentando em 5 minutos...")
+            time.sleep(300)
             continue
 
         print("🔥 JOGO AO VIVO DETECTADO!")
 
-        # ⚡ MONITOR DURANTE O JOGO
         while True:
             live = get_live_match()
 
@@ -86,8 +84,8 @@ def monitor():
                 last_goals = -1
                 break
 
-            home_id = live["teams"]["home"]["id"]
-            away_id = live["teams"]["away"]["id"]
+            home = live["teams"]["home"]["name"]
+            away = live["teams"]["away"]["name"]
 
             gh = live["goals"]["home"]
             ga = live["goals"]["away"]
@@ -97,24 +95,16 @@ def monitor():
             if last_goals == -1:
                 last_goals = total
 
-            # ⚽ Detecta gol
+            # ⚽ Detecta qualquer gol
             if total > last_goals:
-
-                if (home_id == TEAM_ID and gh > ga) or \
-                   (away_id == TEAM_ID and ga > gh):
-
-                    print("GOOOOL DO PALMEIRAS!")
-                    trigger()
-
-                else:
-                    print("Gol, mas não foi do Palmeiras.")
-
+                print(f"⚽ GOL! {home} {gh} x {ga} {away}")
+                trigger()
                 last_goals = total
 
-            print(f"Placar atual: {gh} x {ga}")
+            print(f"Placar: {home} {gh} x {ga} {away}")
 
-            # ⏱️ consulta a cada 30s (seguro pro limite)
-            time.sleep(30)
+            # ⏱️ consulta rápida pra teste
+            time.sleep(15)
 
 
 # 🚀 inicia monitor em paralelo
